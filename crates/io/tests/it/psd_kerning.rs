@@ -224,7 +224,7 @@ fn add_type_layer(objects: &[(&str, &str)], kept: &[(&str, i32)], at: usize) -> 
         .iter()
         .map(|l| {
             let LayerContent::Text(t) = &l.content else { panic!("not text") };
-            let index = t.psd_raw.as_deref().and_then(photocraft_text::psd::text_index);
+            let index = t.psd_raw.as_deref().and_then(|d| photocraft_text::psd::text_index(d));
             (l.name.clone(), index, t.char_runs().iter().flat_map(|r| r.style.features.iter().filter(|f| f.tag != "calt").map(|f| f.tag.clone())).collect())
         })
         .collect();

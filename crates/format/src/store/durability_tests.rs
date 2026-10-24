@@ -7,7 +7,7 @@ use std::sync::Arc;
 use photocraft_color::{ColorMode, SampleType};
 use photocraft_doc::{Document, Layer, Size};
 
-use super::{list_objects, PcraftWriter, SaveOptions, MANIFEST};
+use super::{MANIFEST, PcraftWriter, SaveOptions, list_objects};
 use crate::atomic::{AtomicFs, RealFs};
 
 /// The object or manifest directory barrier at which to inject one publication failure.

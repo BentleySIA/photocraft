@@ -2340,8 +2340,7 @@ fn build_fx_slot_maps(layer: &Layer, region: Rect, key: u64, cx: &Ctx, slot: &Fx
     let mut pin = Vec::new();
     layer_identity(layer, &mut std::collections::hash_map::DefaultHasher::new(), &mut |t| pin.push(std::sync::Arc::downgrade(t)));
     // The maps, plus what each reserved tile address keeps allocated.
-    let bytes =
-        maps.bytes().saturating_add(pin.len().saturating_mul(std::mem::size_of::<photocraft_raster::Tile>() + 2 * std::mem::size_of::<usize>()));
+    let bytes = maps.bytes().saturating_add(pin.len().saturating_mul(std::mem::size_of::<photocraft_raster::Tile>() + 2 * std::mem::size_of::<usize>()));
     let maps = std::sync::Arc::new(maps);
     if slot.set(FxEntry { maps: maps.clone(), _pin: pin, bytes }).is_ok() {
         // Counted exactly once, by the build that filled the slot, and only while the

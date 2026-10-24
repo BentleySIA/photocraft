@@ -1,7 +1,7 @@
 use photocraft_psd::atn;
 use serde_json::json;
 
-use super::{enm, export, export_item, get_obj, layer_ref, pct, text, trimmed, Action, Session, Skipped};
+use super::{Action, Session, Skipped, enm, export, export_item, get_obj, layer_ref, pct, text, trimmed};
 
 /// PhotoCraft's own roundtrip accepts a combined Set, but Photoshop applies only its rename.
 #[test]

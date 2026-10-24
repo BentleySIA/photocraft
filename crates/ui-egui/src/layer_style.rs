@@ -643,7 +643,7 @@ fn validate_params(f: &Map<String, Value>) -> Result<(), String> {
     Ok(())
 }
 
-fn effect_entry(e: &Map<String, Value>, kind: &str, mut params: Value, initial_light_angle: Option<f64>) -> Value {
+fn effect_entry(e: &Value, kind: &str, mut params: Value, initial_light_angle: Option<f64>) -> Value {
     match e.get("fx").filter(|fx| fx.is_object()) {
         Some(fx) => {
             if kind == "bevelEmboss"

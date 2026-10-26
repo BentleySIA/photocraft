@@ -804,11 +804,9 @@ fn file_command(fields: &Fields) -> Option<&'static str> {
     }
 }
 
-/// Confirm a dialog: run its action and close it. Used by the OK button and by automation.
-pub fn confirm(app: &mut PhotocraftApp, id: u64) -> Result<Value, String> {
-    if crate::layer_style::color_picker::has_child(app, id) {
-        return Err("confirm or cancel the Layer Style color picker first".into());
-    }
+/// Checks a dialog before it runs: the file access of its command and the guide color picker
+/// it may depend on.
+fn gate_confirm(app: &mut PhotocraftApp, id: u64) -> Result<(), String> {
     // A control request installs the session gate; synthetic input sets `automation_input`.
     // Either way the handler's own file access is judged before it runs, as its command would be.
     if (app.automation_input || app.session.authorize.is_some())
@@ -824,6 +822,15 @@ pub fn confirm(app: &mut PhotocraftApp, id: u64) -> Result<Value, String> {
         }
         crate::guide_layout_ui::validate(app, &d.fields)?;
     }
+    Ok(())
+}
+
+/// Confirm a dialog: run its action and close it. Used by the OK button and by automation.
+pub fn confirm(app: &mut PhotocraftApp, id: u64) -> Result<Value, String> {
+    if crate::layer_style::color_picker::has_child(app, id) {
+        return Err("confirm or cancel the Layer Style color picker first".into());
+    }
+    gate_confirm(app, id)?;
     let d = app.ui.close_dialog(id).ok_or_else(|| format!("no dialog {id}"))?;
     match d.kind {
         DialogKind::NewDocument => {
@@ -866,66 +873,68 @@ pub fn confirm(app: &mut PhotocraftApp, id: u64) -> Result<Value, String> {
         DialogKind::Command if crate::color_range_ui::owns(&d.fields) => crate::color_range_ui::confirm(app, &d.fields),
         DialogKind::Command if crate::prefs_ui::owns(&d.fields) => crate::prefs_ui::confirm(app, &d.fields),
         DialogKind::Command if d.fields.contains_key("__export") => crate::export_dialog::confirm(app, &d.fields),
-        DialogKind::Command => {
-            let Some(cmd) = d.fields.get("__command").and_then(Value::as_str).map(str::to_string) else {
-                app.filter_preview = None;
-                crate::actions::abandoned(app, &d.fields);
-                return Err("dialog has no command".into());
-            };
-            if crate::filter_dialog::needs_displace_map(&cmd, &crate::filter_dialog::params_of(&d.fields)) {
-                app.filter_preview = None;
-                let result = crate::filter_dialog::ask_displace_map(app, cmd, d.fields.clone());
-                if result.is_err() {
-                    crate::actions::abandoned(app, &d.fields);
-                } else {
-                    // Cancel and an unavailable picker finish before the Displace callback
-                    // runs. Observe the whole file-dialog result, including those exits.
-                    app.after_file_dialog(move |app, result| {
-                        if result.is_err() {
-                            crate::actions::abandoned(app, &d.fields);
-                        }
-                        result
-                    });
-                }
-                return result;
-            }
-            let (cmd, params) = match crate::smart_ui::confirm_command(app, &d.fields, cmd, crate::filter_dialog::params_of(&d.fields)) {
-                Ok(edit) => edit,
-                Err(e) => {
-                    app.filter_preview = None;
-                    return Err(e);
-                }
-            };
-            let result = app.run(&cmd, params.clone());
-            // A filter that runs as a background job keeps its preview on screen until the job
-            // lands (`canvas::committed_filter_preview`) instead of flashing the unfiltered image.
-            let running = app
-                .session
-                .active()
-                .is_some_and(|st| app.filter_preview.as_ref().is_some_and(|p| p.key.doc == st.doc.id) && app.session.job_on(st.doc.id).is_some());
-            match app.filter_preview.as_mut() {
-                Some(p) if result.is_ok() && running => p.committing = true,
-                _ => app.filter_preview = None,
-            }
-            if result.is_ok() && cmd == "view.newGuideLayout" {
-                app.ui.view.guide_layout = params;
-            }
-            if result.is_ok() {
-                if crate::adjust_dialog::owns(&d.fields) {
-                    crate::adjust_dialog::remember(app, &d.fields);
-                } else {
-                    crate::filter_dialog::remember(app, &cmd, &d.fields);
-                }
-                // A step dialog of a playing action: the action continues after it.
-                crate::actions::resume(app, &d.fields)?;
-            } else {
-                crate::actions::abandoned(app, &d.fields);
-            }
-            result
-        }
+        DialogKind::Command => confirm_command_dialog(app, d.fields),
         DialogKind::LayerStyle => crate::layer_style::confirm(app, &d.fields),
         DialogKind::About | DialogKind::Error => Ok(Value::Null),
     }
+}
+
+/// A generic command dialog: runs its `__command` with the dialog's fields, or opens the displace
+/// map picker first when the command needs one.
+fn confirm_command_dialog(app: &mut PhotocraftApp, fields: Fields) -> Result<Value, String> {
+    let Some(cmd) = fields.get("__command").and_then(Value::as_str).map(str::to_string) else {
+        app.filter_preview = None;
+        crate::actions::abandoned(app, &fields);
+        return Err("dialog has no command".into());
+    };
+    if crate::filter_dialog::needs_displace_map(&cmd, &crate::filter_dialog::params_of(&fields)) {
+        app.filter_preview = None;
+        let result = crate::filter_dialog::ask_displace_map(app, cmd, fields.clone());
+        if result.is_err() {
+            crate::actions::abandoned(app, &fields);
+        } else {
+            // Cancel and an unavailable picker finish before the Displace callback
+            // runs. Observe the whole file-dialog result, including those exits.
+            app.after_file_dialog(move |app, result| {
+                if result.is_err() {
+                    crate::actions::abandoned(app, &fields);
+                }
+                result
+            });
+        }
+        return result;
+    }
+    let (cmd, params) = match crate::smart_ui::confirm_command(app, &fields, cmd, crate::filter_dialog::params_of(&fields)) {
+        Ok(edit) => edit,
+        Err(e) => {
+            app.filter_preview = None;
+            return Err(e);
+        }
+    };
+    let result = app.run(&cmd, params.clone());
+    // A filter that runs as a background job keeps its preview on screen until the job
+    // lands (`canvas::committed_filter_preview`) instead of flashing the unfiltered image.
+    let running =
+        app.session.active().is_some_and(|st| app.filter_preview.as_ref().is_some_and(|p| p.key.doc == st.doc.id) && app.session.job_on(st.doc.id).is_some());
+    match app.filter_preview.as_mut() {
+        Some(p) if result.is_ok() && running => p.committing = true,
+        _ => app.filter_preview = None,
+    }
+    if result.is_ok() && cmd == "view.newGuideLayout" {
+        app.ui.view.guide_layout = params;
+    }
+    if result.is_ok() {
+        if crate::adjust_dialog::owns(&fields) {
+            crate::adjust_dialog::remember(app, &fields);
+        } else {
+            crate::filter_dialog::remember(app, &cmd, &fields);
+        }
+        // A step dialog of a playing action: the action continues after it.
+        crate::actions::resume(app, &fields)?;
+    } else {
+        crate::actions::abandoned(app, &fields);
+    }
+    result
 }
 
 /// Cancel a dialog and its dependent Layer Style picker, without applying edits.

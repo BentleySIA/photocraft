@@ -698,71 +698,82 @@ fn matte_and_drop_alpha(img: &mut Image) -> bool {
 /// `white`; anything in between is `c·a + white·(1−a)` in normalized space.
 fn matte_pixel(sample: CSample, color: &[u8], alpha: &[u8], white_byte: u8, white_u16: u16, white_f: f32, out: &mut Vec<u8>) -> bool {
     match sample {
-        CSample::U8 => {
-            let Some(&a) = alpha.first() else { return false };
-            if a == 255 {
-                out.extend_from_slice(color);
-            } else if a == 0 {
-                out.resize(out.len().saturating_add(color.len()), white_byte);
-            } else {
-                let af = f32::from(a) / 255.0;
-                for &c in color {
-                    let m = crate::pixels::matte(f32::from(c) / 255.0, af, white_f);
-                    out.push((m.clamp(0.0, 1.0) * 255.0).round() as u8);
-                }
-            }
+        CSample::U8 => matte_u8(color, alpha, white_byte, white_f, out),
+        CSample::U16 => matte_u16(color, alpha, white_u16, white_f, out),
+        CSample::F32 => matte_f32(color, alpha, white_f, out),
+        CSample::F16 => matte_f16(color, alpha, white_f, out),
+    }
+}
+
+fn matte_u8(color: &[u8], alpha: &[u8], white_byte: u8, white_f: f32, out: &mut Vec<u8>) -> bool {
+    let Some(&a) = alpha.first() else { return false };
+    if a == 255 {
+        out.extend_from_slice(color);
+    } else if a == 0 {
+        out.resize(out.len().saturating_add(color.len()), white_byte);
+    } else {
+        let af = f32::from(a) / 255.0;
+        for &c in color {
+            let m = crate::pixels::matte(f32::from(c) / 255.0, af, white_f);
+            out.push((m.clamp(0.0, 1.0) * 255.0).round() as u8);
         }
-        CSample::U16 => {
-            let Some(a) = ne_u16(alpha) else { return false };
-            if a == u16::MAX {
-                out.extend_from_slice(color);
-            } else if a == 0 {
-                for _ in 0..color.len() / 2 {
-                    out.extend_from_slice(&white_u16.to_ne_bytes());
-                }
-            } else {
-                let af = f32::from(a) / 65535.0;
-                for pair in color.as_chunks::<2>().0 {
-                    let c = u16::from_ne_bytes(*pair);
-                    let m = crate::pixels::matte(f32::from(c) / 65535.0, af, white_f);
-                    out.extend_from_slice(&((m.clamp(0.0, 1.0) * 65535.0).round() as u16).to_ne_bytes());
-                }
-            }
+    }
+    true
+}
+
+fn matte_u16(color: &[u8], alpha: &[u8], white_u16: u16, white_f: f32, out: &mut Vec<u8>) -> bool {
+    let Some(a) = ne_u16(alpha) else { return false };
+    if a == u16::MAX {
+        out.extend_from_slice(color);
+    } else if a == 0 {
+        for _ in 0..color.len() / 2 {
+            out.extend_from_slice(&white_u16.to_ne_bytes());
         }
-        CSample::F32 => {
-            let Some(a) = ne_f32(alpha) else { return false };
-            if a == 1.0 {
-                out.extend_from_slice(color);
-            } else if a == 0.0 || !a.is_finite() {
-                for _ in 0..color.len() / 4 {
-                    out.extend_from_slice(&white_f.to_ne_bytes());
-                }
-            } else {
-                let af = a.clamp(0.0, 1.0);
-                for quad in color.as_chunks::<4>().0 {
-                    let m = crate::pixels::matte(f32::from_ne_bytes(*quad), af, white_f);
-                    out.extend_from_slice(&m.to_ne_bytes());
-                }
-            }
+    } else {
+        let af = f32::from(a) / 65535.0;
+        for pair in color.as_chunks::<2>().0 {
+            let c = u16::from_ne_bytes(*pair);
+            let m = crate::pixels::matte(f32::from(c) / 65535.0, af, white_f);
+            out.extend_from_slice(&((m.clamp(0.0, 1.0) * 65535.0).round() as u16).to_ne_bytes());
         }
-        CSample::F16 => {
-            let Some(bits) = ne_u16(alpha) else { return false };
-            let a = codecs::f16::from_bits(bits).to_f32();
-            if a == 1.0 {
-                out.extend_from_slice(color);
-            } else if a == 0.0 || !a.is_finite() {
-                let w = codecs::f16::from_f32(white_f).to_bits().to_ne_bytes();
-                for _ in 0..color.len() / 2 {
-                    out.extend_from_slice(&w);
-                }
-            } else {
-                let af = a.clamp(0.0, 1.0);
-                for pair in color.as_chunks::<2>().0 {
-                    let c = codecs::f16::from_bits(u16::from_ne_bytes(*pair)).to_f32();
-                    let m = codecs::f16::from_f32(crate::pixels::matte(c, af, white_f)).to_bits();
-                    out.extend_from_slice(&m.to_ne_bytes());
-                }
-            }
+    }
+    true
+}
+
+fn matte_f32(color: &[u8], alpha: &[u8], white_f: f32, out: &mut Vec<u8>) -> bool {
+    let Some(a) = ne_f32(alpha) else { return false };
+    if a == 1.0 {
+        out.extend_from_slice(color);
+    } else if a == 0.0 || !a.is_finite() {
+        for _ in 0..color.len() / 4 {
+            out.extend_from_slice(&white_f.to_ne_bytes());
+        }
+    } else {
+        let af = a.clamp(0.0, 1.0);
+        for quad in color.as_chunks::<4>().0 {
+            let m = crate::pixels::matte(f32::from_ne_bytes(*quad), af, white_f);
+            out.extend_from_slice(&m.to_ne_bytes());
+        }
+    }
+    true
+}
+
+fn matte_f16(color: &[u8], alpha: &[u8], white_f: f32, out: &mut Vec<u8>) -> bool {
+    let Some(bits) = ne_u16(alpha) else { return false };
+    let a = codecs::f16::from_bits(bits).to_f32();
+    if a == 1.0 {
+        out.extend_from_slice(color);
+    } else if a == 0.0 || !a.is_finite() {
+        let w = codecs::f16::from_f32(white_f).to_bits().to_ne_bytes();
+        for _ in 0..color.len() / 2 {
+            out.extend_from_slice(&w);
+        }
+    } else {
+        let af = a.clamp(0.0, 1.0);
+        for pair in color.as_chunks::<2>().0 {
+            let c = codecs::f16::from_bits(u16::from_ne_bytes(*pair)).to_f32();
+            let m = codecs::f16::from_f32(crate::pixels::matte(c, af, white_f)).to_bits();
+            out.extend_from_slice(&m.to_ne_bytes());
         }
     }
     true

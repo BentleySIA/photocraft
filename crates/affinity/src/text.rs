@@ -69,14 +69,14 @@ pub(crate) fn read(r: &mut Reader, id: ObjId, world: Affine) -> Option<Text> {
 /// inline object (page number, anchor) takes one `U+FFFC` before its segment's text. Stops once
 /// `total` plus these characters would pass the cap.
 fn block_chars(s: &Stream, glyphs: ObjId, total: usize, placeholders: &mut bool) -> Vec<char> {
+    // One past the allowance is enough to trip the check in `read`; both arms stop there.
+    let room = MAX_CHARS.saturating_sub(total).saturating_add(1);
     match s.str(glyphs, b"Utf8") {
-        Some(t) => t.chars().collect(),
+        Some(t) => t.chars().take(room).collect(),
         None => {
             // Inline objects (page numbers, anchors) each take one index before the segment text.
             let mut v = Vec::new();
-            // One past the allowance is enough to trip the check below; shared segments
-            // repeated by reference must not expand beyond it first.
-            let room = MAX_CHARS.saturating_sub(total).saturating_add(1);
+            // Shared segments repeated by reference must not expand beyond the allowance first.
             for seg in s.objs(glyphs, b"Mixd") {
                 if v.len() >= room {
                     break;

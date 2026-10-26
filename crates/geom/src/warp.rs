@@ -1111,12 +1111,20 @@ impl Warp {
     /// One sample row (`j` within patch row `pj`) of [`Self::mesh_is_box_fit`].
     fn mesh_row_is_box_fit(&self, m: &BezierMesh, pj: usize, j: usize, pc: usize) -> bool {
         let nx = m.nx();
-        let v = m.vs[pj] + (m.vs[pj + 1] - m.vs[pj]) * j as f64 / 3.0;
+        let (Some(&v0), Some(&v1)) = (m.vs.get(pj), m.vs.get(pj + 1)) else {
+            return false;
+        };
+        let v = v0 + (v1 - v0) * j as f64 / 3.0;
         for pi in 0..pc {
+            let (Some(&u0), Some(&u1)) = (m.us.get(pi), m.us.get(pi + 1)) else {
+                return false;
+            };
             for i in 0..4 {
-                let u = m.us[pi] + (m.us[pi + 1] - m.us[pi]) * i as f64 / 3.0;
+                let u = u0 + (u1 - u0) * i as f64 / 3.0;
                 let expected = self.box_point(u, v);
-                let actual = m.points[(3 * pj + j) * nx + 3 * pi + i];
+                let Some(&actual) = m.points.get((3 * pj + j) * nx + 3 * pi + i) else {
+                    return false;
+                };
                 if !point_fits(expected, actual) {
                     return false;
                 }

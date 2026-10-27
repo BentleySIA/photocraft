@@ -1,6 +1,6 @@
 //! Reuse the jittered lattice in cell space. Raster work stays in the original
 //! row/candidate order, including f32 ties and boundary-cell average additions.
-use super::*;
+use super::{Ctx, Image, MAXC, Rect, cell_point, hash01, native, ncol, subtractive};
 
 #[derive(Clone, Copy)]
 struct Site {

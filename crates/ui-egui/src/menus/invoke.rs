@@ -1,4 +1,4 @@
-use super::*;
+use super::{DOCUMENT_ITEM, DialogKind, PhotocraftApp, Value, json};
 
 /// Photoshop's Window › <panel> ids for the panels the shell already has, as `window.toggle.*`.
 pub(crate) fn panel_alias(id: &str) -> Option<&'static str> {
@@ -57,114 +57,117 @@ pub fn invoke(app: &mut PhotocraftApp, ctx: &egui::Context, id: &str, params: Va
 }
 
 /// [`invoke`] without the unsaved-changes prompt, for once the user has already answered it.
-pub(crate) fn invoke_unguarded(app: &mut PhotocraftApp, ctx: &egui::Context, id: &str, params: Value) -> Result<Value, String> {
+fn invoke_early_commands(app: &mut PhotocraftApp, ctx: &egui::Context, id: &str, params: &Value) -> Option<Result<Value, String>> {
     if let Some(tool) = crate::tool_shortcuts::tool(id) {
         crate::tool_memory::select(app, tool);
-        return Ok(json!({"tool": tool}));
+        return Some(Ok(json!({"tool": tool})));
     }
     if id == "help.checkForUpdates" {
-        return crate::updates_ui::check(app, ctx, params);
+        return Some(crate::updates_ui::check(app, ctx, params.clone()));
     }
     if id == "ui.symmetryTransform" {
-        return crate::symmetry_ui::begin(app).map(|_| Value::Null);
+        return Some(crate::symmetry_ui::begin(app).map(|_| Value::Null));
     }
-    if let Some(r) = crate::tool_reset::invoke(app, id, &params) {
-        return r;
+    if let Some(r) = crate::tool_reset::invoke(app, id, params) {
+        return Some(r);
     }
     // A filter on a type layer asks to rasterize it first (#4303).
-    if let Some(r) = crate::rasterize_prompt::intercept_filter(app, id, &params) {
-        return r;
+    if let Some(r) = crate::rasterize_prompt::intercept_filter(app, id, params) {
+        return Some(r);
     }
     // A pending Pen anchor is gesture state; Edit › Undo must match the keyboard.
     if id == "edit.undo" && crate::vector_ui::pen_undo_last_point(app) {
-        return Ok(Value::Null);
+        return Some(Ok(Value::Null));
     }
     // Image › Crop while the Crop tool has a pending frame commits that frame (#1918).
     if id == "image.crop" && crate::crop_ui::pending(app) {
         crate::canvas::commit_crop(app);
-        return Ok(json!({"committed": true}));
+        return Some(Ok(json!({"committed": true})));
     }
-    if let Some(result) = crate::panel_docking::command(app, id, &params) {
-        return result;
+    if let Some(result) = crate::panel_docking::command(app, id, params) {
+        return Some(result);
     }
     // Help › Discord, website, GitHub, Report an Issue.
     if let Some(url) = crate::links::url_for(id) {
-        return Ok(crate::links::open(app, ctx, url));
+        return Some(Ok(crate::links::open(app, ctx, url)));
     }
     if id == "view.proofSetup.custom" {
-        return Ok(json!({"dialog": crate::filter_dialog::open(app, "view.proofSetup")}));
+        return Some(Ok(json!({"dialog": crate::filter_dialog::open(app, "view.proofSetup")})));
     }
     // Image › Analysis tools/dialogs, Measurement Log and Notes panels, File › Import › Notes.
-    if let Some(r) = crate::analysis_ui::menu(app, id, &params) {
-        return r;
+    if let Some(r) = crate::analysis_ui::menu(app, id, params) {
+        return Some(r);
     }
     // Workspace New/Delete/Lock, Modifier Keys, custom pixel aspect, Extras/32-bit options.
-    if let Some(r) = crate::workspace_ui::menu(app, id, &params) {
-        return r;
+    if let Some(r) = crate::workspace_ui::menu(app, id, params) {
+        return Some(r);
     }
     // Window › Gradients, Patterns, Styles, Shapes, Tool Presets, Clone Source.
-    if let Some(r) = crate::preset_panels::menu(app, id, &params) {
-        return r;
+    if let Some(r) = crate::preset_panels::menu(app, id, params) {
+        return Some(r);
     }
     // Character/Paragraph Styles, Glyphs, Edit › Check Spelling dialog.
-    if let Some(r) = crate::type_panels_ui::menu(app, id, &params) {
-        return r;
+    if let Some(r) = crate::type_panels_ui::menu(app, id, params) {
+        return Some(r);
     }
     // Image > Variables (Define / Data Sets), Apply Data Set.
-    if let Some(r) = crate::variables_ui::menu(app, id, &params) {
-        return r;
+    if let Some(r) = crate::variables_ui::menu(app, id, params) {
+        return Some(r);
     }
     // Window > Timeline panel.
-    if let Some(r) = crate::timeline_ui::menu(app, id, &params) {
-        return r;
+    if let Some(r) = crate::timeline_ui::menu(app, id, params) {
+        return Some(r);
     }
     // Filter › Plug-ins (installed WebAssembly plug-ins, Install Plug-in…).
-    if let Some(r) = crate::plugin_ui::menu(app, id, &params) {
-        return r;
+    if let Some(r) = crate::plugin_ui::menu(app, id, params) {
+        return Some(r);
     }
     // History panel menu › History Options… (without params: its dialog).
-    if let Some(r) = crate::history_options_ui::menu(app, id, &params) {
-        return r;
+    if let Some(r) = crate::history_options_ui::menu(app, id, params) {
+        return Some(r);
     }
+    None
+}
+
+fn invoke_shell_commands(app: &mut PhotocraftApp, ctx: &egui::Context, id: &str, params: &Value) -> Option<Result<Value, String>> {
     if id == "window.panel.brushSettings" {
         app.ui.brush_tab = 0;
     }
     // View/Window/Type shell items, and dialogs/pickers in front of File commands.
     // Edit › Preferences, Keyboard Shortcuts, Color Settings and other Edit dialogs.
-    if let Some(r) = crate::prefs_ui::invoke(app, ctx, id, &params) {
-        return r;
+    if let Some(r) = crate::prefs_ui::invoke(app, ctx, id, params) {
+        return Some(r);
     }
     // Save for Web's dialog would export the committed document, not the open Free Transform (#6737).
     if id == crate::transform_tool::SAVE_FOR_WEB
         && let Some(r) = crate::transform_tool::intercept(app, id)
     {
-        return r;
+        return Some(r);
     }
     // Save for Web, Print and the other File-menu dialogs added with slices.
-    if let Some(r) = crate::file_ui::invoke(app, ctx, id, &params) {
-        return r;
+    if let Some(r) = crate::file_ui::invoke(app, ctx, id, params) {
+        return Some(r);
     }
-    if let Some(r) = crate::view_cmds::invoke(app, ctx, id, &params) {
-        return r;
+    if let Some(r) = crate::view_cmds::invoke(app, ctx, id, params) {
+        return Some(r);
     }
     // Liquify dialog, Puppet Warp and Perspective Warp modes (and their control params).
-    if let Some(r) = crate::distort_ui::menu(app, ctx, id, &params) {
-        return r;
+    if let Some(r) = crate::distort_ui::menu(app, ctx, id, params) {
+        return Some(r);
     }
     // Camera Raw Filter dialog (and its control params).
-    if let Some(r) = crate::camera_raw_ui::menu(app, ctx, id, &params) {
-        return r;
+    if let Some(r) = crate::camera_raw_ui::menu(app, ctx, id, params) {
+        return Some(r);
     }
-    if let Some(r) = crate::wide_angle_ui::menu(app, ctx, id, &params) {
-        return r;
+    if let Some(r) = crate::wide_angle_ui::menu(app, ctx, id, params) {
+        return Some(r);
     }
     if let Some(profile) = proof_preset(id) {
         // View › Proof Setup presets: set the proof profile and turn Proof Colors on.
-        app.run("view.proofSetup", json!({"profile": profile}))?;
-        return app.run("view.proofColors", json!({"on": true}));
+        return Some(app.run("view.proofSetup", json!({"profile": profile})).and_then(|_| app.run("view.proofColors", json!({"on": true}))));
     }
     if let Some(alias) = panel_alias(id) {
-        return invoke(app, ctx, alias, params);
+        return Some(invoke(app, ctx, alias, params.clone()));
     }
     if let Some(ws) = workspace_name(id) {
         // Reset re-applies the current workspace; Essentials is the default layout.
@@ -174,12 +177,14 @@ pub(crate) fn invoke_unguarded(app: &mut PhotocraftApp, ctx: &egui::Context, id:
             (name, _) => app.ui.workspace = name.into(),
         }
         apply_workspace(app);
-        return Ok(json!({"workspace": app.ui.workspace}));
+        return Some(Ok(json!({"workspace": app.ui.workspace})));
     }
-    match id {
-        // ⌘↩ / Ctrl+Enter (#306): load the path selected in the Paths panel (or the one being
-        // drawn) as a selection.
-        "path.toSelection" if params.get("name").is_none() => crate::vector_ui::path_to_selection(app, params),
+    None
+}
+
+fn invoke_file_commands(app: &mut PhotocraftApp, ctx: &egui::Context, id: &str, params: &Value) -> Result<Option<Value>, String> {
+    let result = match id {
+        "path.toSelection" if params.get("name").is_none() => crate::vector_ui::path_to_selection(app, params.clone()),
         // Layer › Rename Layer from a menu starts in-place renaming in the Layers panel.
         "layer.renameLayer" if params.get("name").is_none() => {
             let st = app.session.active().ok_or("no document")?;
@@ -210,7 +215,7 @@ pub(crate) fn invoke_unguarded(app: &mut PhotocraftApp, ctx: &egui::Context, id:
         "file.save" => {
             // Writes back only to a layered file that holds the whole document; anything else
             // goes through Save As, so the original is never overwritten with less (#3806).
-            let choices = crate::FormatChoices::from_params(&params, id)?;
+            let choices = crate::FormatChoices::from_params(params, id)?;
             match params.get("path").and_then(Value::as_str) {
                 Some(path) => app.save_as_with(Some(path.to_string()), choices),
                 None => {
@@ -268,9 +273,25 @@ pub(crate) fn invoke_unguarded(app: &mut PhotocraftApp, ctx: &egui::Context, id:
             }
         }
         "file.saveAs" => {
-            let choices = crate::FormatChoices::from_params(&params, id)?;
+            let choices = crate::FormatChoices::from_params(params, id)?;
             app.save_as_with(params.get("path").and_then(Value::as_str).map(str::to_string), choices)
         }
+        _ => return Ok(None),
+    };
+    result.map(Some)
+}
+
+pub(crate) fn invoke_unguarded(app: &mut PhotocraftApp, ctx: &egui::Context, id: &str, params: Value) -> Result<Value, String> {
+    if let Some(result) = invoke_early_commands(app, ctx, id, &params) {
+        return result;
+    }
+    if let Some(result) = invoke_shell_commands(app, ctx, id, &params) {
+        return result;
+    }
+    if let Some(result) = invoke_file_commands(app, ctx, id, &params)? {
+        return Ok(result);
+    }
+    match id {
         "view.zoomIn" | "view.zoomOut" | "view.fitOnScreen" | "view.actualPixels" => app.run(id, params),
         "window.newWindowForDocument" => {
             let doc = app.session.active_index().ok_or("no document")?;

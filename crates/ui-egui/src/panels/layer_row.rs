@@ -1,6 +1,8 @@
 use super::layer_drag::{MaskDrag, fx_drop, layer_drag_and_drop, mask_drag_key, start_fx_drag, starts_mask_drag};
 use super::layers::simple_lock_toggle;
-use super::*;
+use super::{
+    Color32, CornerRadius, Layer, LayerContent, PhotocraftApp, Pos2, Rect, Sense, Stroke, StrokeKind, Tokens, Value, icons, json, pos2, theme, vec2, widgets,
+};
 
 /// How a Layers panel row is selected: in the (multi-)selection, the primary/active layer, and
 /// whether several layers are selected.

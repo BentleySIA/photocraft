@@ -1,6 +1,6 @@
 use super::display::canvas_display;
 use super::textures::texture_buffer;
-use super::*;
+use super::{Document, LayerContent, PhotocraftApp};
 
 /// The proxy factor of a live preview of filter `cmd` with `params` on `doc`, the active document:
 /// reduced on a large document (Preferences › Performance › Low Resolution Previews), except for

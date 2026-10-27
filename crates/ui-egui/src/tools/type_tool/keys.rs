@@ -9,7 +9,7 @@ use super::ime::{
 use super::ime_edit::{ime_delete_bytes, ime_delete_chars, ime_update};
 use super::layout::layout;
 use super::pointer::word_boundary;
-use super::*;
+use super::{LayerId, PhotocraftApp, byte_of, current_text, json, text_char_count, text_layer};
 
 /// Caret on the neighbouring line (±1; a column in vertical type), keeping the position
 /// along the line. Works in line space, so it serves both orientations.

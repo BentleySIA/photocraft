@@ -10,6 +10,7 @@ use serde_json::{Value, json};
 
 use photocraft_engine::actions_cmds::{self, Action};
 
+use crate::icons;
 use crate::PhotocraftApp;
 use crate::theme::Tokens;
 
@@ -821,6 +822,86 @@ fn display_order(rows: &[Row]) -> Vec<usize> {
     order
 }
 
+struct SetHeaderResult {
+    toggled: bool,
+    save: bool,
+}
+
+fn draw_set_header(ui: &mut egui::Ui, set: &str, count: u64, collapsed: bool, tokens: &Tokens) -> SetHeaderResult {
+    let (rect, response) = ui.allocate_exact_size(vec2(ui.available_width(), 24.0), Sense::click());
+    response.widget_info(|| egui::WidgetInfo::selected(egui::Role::Button, true, !collapsed, set));
+    if response.hovered() {
+        ui.painter().rect_filled(rect, 0.0, tokens.hover.gamma_multiply(0.5));
+    }
+    let triangle = Rect::from_center_size(pos2(rect.left() + 12.0, rect.center().y), vec2(8.0, 8.0));
+    let points = if collapsed {
+        vec![triangle.left_top(), triangle.right_center(), triangle.left_bottom()]
+    } else {
+        vec![triangle.left_top(), triangle.right_top(), triangle.center_bottom()]
+    };
+    ui.painter().add(egui::Shape::convex_polygon(points, tokens.text_dim, Stroke::NONE));
+    icons::paint(
+        ui,
+        Rect::from_center_size(pos2(rect.left() + 30.0, rect.center().y), vec2(16.0, 16.0)),
+        if collapsed { "folder" } else { "folder-open" },
+        12.0,
+        tokens.icon,
+    );
+    ui.painter().text(pos2(rect.left() + 44.0, rect.center().y), Align2::LEFT_CENTER, set, egui::FontId::proportional(12.0), tokens.text);
+    let summary = crate::i18n::trn(crate::i18n::current(), count, "{n} action", "{n} actions");
+    ui.painter().text(pos2(rect.right() - 8.0, rect.center().y), Align2::RIGHT_CENTER, summary, egui::FontId::proportional(11.0), tokens.text_faint);
+    let toggled = response.clicked();
+    let mut save = false;
+    response.context_menu(|ui| {
+        if ui.button(tl!("Save Set…")).clicked() {
+            save = true;
+            ui.close();
+        }
+    });
+    SetHeaderResult { toggled, save }
+}
+
+fn action_context_menu(app: &mut PhotocraftApp, response: &egui::Response, index: usize, name: &str, swatch: &str) {
+    egui::Popup::context_menu(response).close_behavior(egui::PopupCloseBehavior::CloseOnClickOutside).show(|ui| {
+        ui.label(tl!("Keyboard Shortcuts"));
+        let current = app.session.prefs().shortcuts.get(&shortcut_id(name)).cloned().unwrap_or_default();
+        let (key, mut shift, mut command) = photocraft_engine::atn_cmds::parse_function_key(&current).unwrap_or((0, false, false));
+        for number in std::iter::once(0).chain(1..=12) {
+            let label = if number == 0 { tl!("None").to_string() } else { format!("F{number}") };
+            if ui.selectable_label(key == number, label).clicked() {
+                let chosen = if number == 0 { String::new() } else { photocraft_engine::atn_cmds::function_key_name(number, shift, command) };
+                let _ = assign_shortcut(app, name, &chosen);
+                ui.close();
+            }
+        }
+        ui.add_enabled_ui(key > 0, |ui| {
+            let command_label = if cfg!(target_os = "macos") { tl!("Command") } else { tl!("Ctrl") };
+            let toggled = ui.checkbox(&mut shift, tl!("Shift")).changed() | ui.checkbox(&mut command, command_label).changed();
+            if toggled {
+                let _ = assign_shortcut(app, name, &photocraft_engine::atn_cmds::function_key_name(key, shift, command));
+            }
+        });
+        ui.separator();
+        ui.menu_button(tl!("Color"), |ui| {
+            for (id, label) in [
+                ("", tl!("None")),
+                ("red", tl!("Red")),
+                ("orange", tl!("Orange")),
+                ("yellow", tl!("Yellow")),
+                ("green", tl!("Green")),
+                ("blue", tl!("Blue")),
+                ("violet", tl!("Violet")),
+                ("gray", tl!("Gray")),
+            ] {
+                if ui.selectable_label(swatch == id, label).clicked() {
+                    let _ = app.run("actions.setColor", json!({"action": index, "color": id}));
+                    ui.close();
+                }
+            }
+        });
+    });
+}
+
 pub fn panel(app: &mut PhotocraftApp, ui: &mut egui::Ui) {
     let t = Tokens::get(ui.ctx());
     let recording = app.session.actions.recording;
@@ -900,38 +981,14 @@ pub fn panel(app: &mut PhotocraftApp, ui: &mut egui::Ui) {
             {
                 shown_set = Some(set);
                 let collapsed = app.ui.actions.collapsed_sets.iter().any(|c| c == set);
-                let (hr, hresp) = ui.allocate_exact_size(vec2(ui.available_width(), 24.0), Sense::click());
-                hresp.widget_info(|| egui::WidgetInfo::selected(egui::Role::Button, true, !collapsed, set));
-                if hresp.hovered() {
-                    ui.painter().rect_filled(hr, 0.0, t.hover.gamma_multiply(0.5));
-                }
-                let tri = Rect::from_center_size(pos2(hr.left() + 12.0, hr.center().y), vec2(8.0, 8.0));
-                let pts = if collapsed {
-                    vec![tri.left_top(), tri.right_center(), tri.left_bottom()]
-                } else {
-                    vec![tri.left_top(), tri.right_top(), tri.center_bottom()]
-                };
-                ui.painter().add(egui::Shape::convex_polygon(pts, t.text_dim, Stroke::NONE));
-                crate::icons::paint(
-                    ui,
-                    Rect::from_center_size(pos2(hr.left() + 30.0, hr.center().y), vec2(16.0, 16.0)),
-                    if collapsed { "folder" } else { "folder-open" },
-                    12.0,
-                    t.icon,
-                );
-                ui.painter().text(pos2(hr.left() + 44.0, hr.center().y), Align2::LEFT_CENTER, set, egui::FontId::proportional(12.0), t.text);
                 let count = rows.iter().filter(|r| r.set.as_deref() == Some(set)).count() as u64;
-                let summary = crate::i18n::trn(crate::i18n::current(), count, "{n} action", "{n} actions");
-                ui.painter().text(pos2(hr.right() - 8.0, hr.center().y), Align2::RIGHT_CENTER, summary, egui::FontId::proportional(11.0), t.text_faint);
-                if hresp.clicked() {
+                let result = draw_set_header(ui, set, count, collapsed, &t);
+                if result.toggled {
                     set_toggled = Some(set.to_string());
                 }
-                hresp.context_menu(|ui| {
-                    if ui.button(tl!("Save Set…")).clicked() {
-                        save_set = Some(set.to_string());
-                        ui.close();
-                    }
-                });
+                if result.save {
+                    save_set = Some(set.to_string());
+                }
             }
             if set.as_deref().is_some_and(|set| app.ui.actions.collapsed_sets.iter().any(|c| c == set)) {
                 continue;
@@ -1012,45 +1069,7 @@ pub fn panel(app: &mut PhotocraftApp, ui: &mut egui::Ui) {
             }
             // Clicks inside stay open, so Shift and Command can both be ticked; every item that
             // finishes closes the menu itself.
-            egui::Popup::context_menu(&resp).close_behavior(egui::PopupCloseBehavior::CloseOnClickOutside).show(|ui| {
-                ui.label(tl!("Keyboard Shortcuts"));
-                let current = app.session.prefs().shortcuts.get(&shortcut_id(name)).cloned().unwrap_or_default();
-                // Photoshop's Action Options: a function key, with Shift and Command (#7646).
-                let (key, mut shift, mut command) = photocraft_engine::atn_cmds::parse_function_key(&current).unwrap_or((0, false, false));
-                for n in std::iter::once(0).chain(1..=12) {
-                    let label = if n == 0 { tl!("None").to_string() } else { format!("F{n}") };
-                    if ui.selectable_label(key == n, label).clicked() {
-                        let chosen = if n == 0 { String::new() } else { photocraft_engine::atn_cmds::function_key_name(n, shift, command) };
-                        let _ = assign_shortcut(app, name, &chosen);
-                        ui.close();
-                    }
-                }
-                ui.add_enabled_ui(key > 0, |ui| {
-                    let command_label = if cfg!(target_os = "macos") { tl!("Command") } else { tl!("Ctrl") };
-                    let toggled = ui.checkbox(&mut shift, tl!("Shift")).changed() | ui.checkbox(&mut command, command_label).changed();
-                    if toggled {
-                        let _ = assign_shortcut(app, name, &photocraft_engine::atn_cmds::function_key_name(key, shift, command));
-                    }
-                });
-                ui.separator();
-                ui.menu_button(tl!("Color"), |ui| {
-                    for (id, label) in [
-                        ("", tl!("None")),
-                        ("red", tl!("Red")),
-                        ("orange", tl!("Orange")),
-                        ("yellow", tl!("Yellow")),
-                        ("green", tl!("Green")),
-                        ("blue", tl!("Blue")),
-                        ("violet", tl!("Violet")),
-                        ("gray", tl!("Gray")),
-                    ] {
-                        if ui.selectable_label(swatch == id, label).clicked() {
-                            let _ = app.run("actions.setColor", json!({"action": i, "color": id}));
-                            ui.close();
-                        }
-                    }
-                });
-            });
+            action_context_menu(app, &resp, i, name, swatch);
             if resp.double_clicked() && !button_mode {
                 // Photoshop renames in place when the name itself is double-clicked.
                 if resp.interact_pointer_pos().is_some_and(|p| name_rect.expand2(vec2(4.0, 13.0)).contains(p)) {

@@ -1,4 +1,4 @@
-use super::*;
+use super::{ColorMode, Document, Interrupt, PixelFormat, SampleType, encode_be, q255};
 
 pub(super) fn cmyk_of(fmt: &PixelFormat) -> bool {
     fmt.mode == ColorMode::Cmyk

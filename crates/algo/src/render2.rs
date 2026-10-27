@@ -1449,12 +1449,7 @@ impl FrameLayout {
     /// A second rule inside each double line.
     fn inner_rule(&self, out: &mut Vec<Prim>, off: f32) {
         let (b, unit) = (&self.b, self.unit);
-        let inner = Border {
-            x0: b.x0 + unit * 0.6 + off,
-            y0: b.y0 + unit * 0.6 + off,
-            w: b.w - 2.0 * (unit * 0.6 + off),
-            h: b.h - 2.0 * (unit * 0.6 + off),
-        };
+        let inner = Border { x0: b.x0 + unit * 0.6 + off, y0: b.y0 + unit * 0.6 + off, w: b.w - 2.0 * (unit * 0.6 + off), h: b.h - 2.0 * (unit * 0.6 + off) };
         for e in 0..4 {
             let (p, _, _) = inner.at([0.0, inner.w, inner.w + inner.h, 2.0 * inner.w + inner.h][e]);
             let (q, _, _) = inner.at([inner.w, inner.w + inner.h, 2.0 * inner.w + inner.h, inner.len() - 0.001][e]);

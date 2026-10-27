@@ -4,7 +4,7 @@
 
 - Repository: `storytold/photocraft`
 - Branch: `fix/photocraft-pr-9770`
-- Remote branch `origin/fix/photocraft-pr-9770` points to `d3e63dca328f14c6b9b08dd03dc2a5c224aea1af` (`refactor: keep IO and GPU paths clean under Clippy`). The previous work was pushed to `origin`.
+- The original implementation commit `d3e63dca3` (`refactor: keep IO and GPU paths clean under Clippy`) was pushed to `origin`; the handoff document was then committed and pushed as a follow-up. Check `git log -1` for the current tip.
 - No PR currently exists for this branch (`gh pr list --head fix/photocraft-pr-9770 --state all` returned `[]`).
 - User explicitly requested plain commits without bot attribution, and asked to push changes remotely as work proceeds.
 

@@ -13,6 +13,9 @@ description = "Pen tablet pressure, tilt, rotation and eraser end on macOS (AppK
 unsafe_code = "deny"
 
 [lints.clippy]
+cognitive_complexity = "deny"
+too_many_arguments = "deny"
+wildcard_imports = "deny"
 dbg_macro = "warn"
 todo = "warn"
 

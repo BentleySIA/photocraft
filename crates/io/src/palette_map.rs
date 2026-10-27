@@ -40,7 +40,7 @@ pub(crate) fn document_to_psd(doc: &Document, force_psb: bool, size_limit: Optio
     if !flattens_losslessly(doc) {
         warnings.push(format!("{:?} documents have no layers in Photoshop: written flattened", doc.mode));
     }
-    let version = crate::psd_export::psd_version(doc, force_psb);
+    let version = crate::psd_export::psd_version(doc, force_psb, false);
     let depth = if mode == PsdMode::Bitmap { 1 } else { 8 };
     let header = Header::new(version, doc.size.width, doc.size.height, 1, depth, mode);
     let image_data = ImageData::encode(Compression::Rle, &plane, &header)

@@ -655,7 +655,7 @@ impl Ctx<'_> {
                     let sd = rec.section_divider();
                     let expanded = sd.is_none_or(|s| s.kind != photocraft_psd::SectionType::ClosedFolder);
                     let artboard = crate::comps_map::ARTBOARD_KEYS.iter().find_map(|k| rec.block(k)).and_then(|b| crate::comps_map::parse_artboard(&b.data));
-                    let mut l = Layer::new(rec.name(), LayerContent::Group(Group { children, expanded, artboard }));
+                    let mut l = Layer::new(rec.name(), LayerContent::Group(Group { children, expanded, artboard, frame_stroke: None }));
                     l.psd_blocks = preserved_blocks(rec);
                     self.apply_common(&mut l, rec, sd.and_then(|s| s.blend_mode));
                     self.apply_vector_mask(&mut l, rec);
@@ -903,6 +903,21 @@ pub fn psd_to_document(file: &PsdFile) -> (Document, Vec<String>) {
 /// progress. `None` when cancelled.
 pub fn psd_to_document_with(file: &PsdFile, ctl: &photocraft_raster::Interrupt) -> Option<(Document, Vec<String>)> {
     psd_to_document_decoded(file, ctl, None)
+}
+
+/// Like [`psd_to_document_decoded_integrity`], but owned: consumes `file` (its `stored`
+/// channels move into `image_data.stored`) and returns the read error separately so the
+/// caller can turn a mid-read failure into an open failure.
+pub(crate) fn psd_to_document_owned(
+    file: PsdFile,
+    ctl: &photocraft_raster::Interrupt,
+    merged: Option<photocraft_psd::Result<Vec<u8>>>,
+) -> Option<(Document, Vec<String>, bool, Option<photocraft_psd::PsdError>)> {
+    // Leave layer channels in their source for the layered path; the flat path already has
+    // the merged bytes in `merged`. `psd_to_document_decoded_integrity` reads `file`'s
+    // channels from their source when `stored` is set, and the flat path only touches the
+    // merged image, so ownership of `file` is enough: nothing else borrows it.
+    psd_to_document_decoded_integrity(&file, ctl, merged).map(|(document, warnings, damaged)| (document, warnings, damaged, None))
 }
 
 /// Whether `file` stores spot planes the way earlier PhotoCraft versions (releases 0.1.0 to

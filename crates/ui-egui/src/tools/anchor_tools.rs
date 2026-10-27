@@ -47,6 +47,11 @@ fn target(app: &PhotocraftApp, tool: Tool, p: [f64; 2]) -> Option<(PathRef, Path
     }
 }
 
+#[cfg(test)]
+mod tests {
+    use super::*;
+}
+
 /// The Pen's Auto Add/Delete (#4144): what a Pen click at `p` does to the active path instead of
 /// starting a new one, as the anchor tool that does it (Add Anchor Point on a segment, Delete
 /// Anchor Point on an anchor), the path and the hit. While a path is being drawn it edits that

@@ -1,4 +1,5 @@
-use super::estimate::{MERGED_RENDERED, MERGED_WEIGHT, block_signature, psd_size_exceeds_limit, psd_version};
+use super::PSD_MAX_FILE_SIZE;
+use super::estimate::{MERGED_RENDERED, MERGED_WEIGHT, block_signature, fit_psd_size, psd_size_exceeds_limit, psd_version, sign_global_blocks};
 use super::merged::{cmyk_of, merged_planes, placeholder_planes};
 use super::resources::{global_block, guides_resource, keep_imported_resource, legacy_name, pascal_names_resource, path_resources, unicode_names_resource};
 use super::smart::{SmartOut, link_group_resource};
@@ -30,9 +31,9 @@ pub(crate) fn document_to_psd_interruptible(doc: &Document, opts: &PsdExportOpti
 /// [`document_to_psd_with`] for a document embedded `depth` smart objects deep.
 pub(super) fn document_to_psd_nested(doc: &Document, opts: &PsdExportOptions, depth: u32, ctl: &Interrupt) -> (PsdFile, Vec<String>) {
     if doc.mode == ColorMode::Multichannel {
-        return crate::multichannel_map::document_to_psd(doc, opts.force_psb);
+        return crate::multichannel_map::document_to_psd(doc, opts.force_psb, opts.size_limit_psb.then_some(PSD_MAX_FILE_SIZE));
     }
-    if let Some(file) = crate::palette_map::document_to_psd(doc, opts.force_psb) {
+    if let Some(file) = crate::palette_map::document_to_psd(doc, opts.force_psb, opts.size_limit_psb.then_some(PSD_MAX_FILE_SIZE)) {
         return file;
     }
     let fmt = doc.pixel_format();
@@ -261,6 +262,7 @@ fn export_supported_document(doc: &Document, opts: &PsdExportOptions, depth: u32
         global_blocks,
         layer_mask_trailing: Vec::new(),
         image_data,
+        write_as_psb: false,
     };
     (file, ex.warnings)
 }
@@ -314,9 +316,11 @@ fn prepare_merged_planes<'a>(
     let mode = if duotone { PsdMode::Duotone } else { psd_mode(fmt.mode) };
     let header = Header::new(ex.version, doc.size.width, doc.size.height, channels, psd_depth(sample), mode);
     let compression = if sample == SampleType::F32 { Compression::Raw } else { opts.merged_compression };
-    let image_data = ImageData::encode(compression, &planes, &header)
-        .or_else(|_| ImageData::encode(Compression::Raw, &planes, &header))
-        .unwrap_or(ImageData { compression: Compression::Raw, data: planes });
+    let image_data = ImageData::encode(compression, &planes, &header).or_else(|_| ImageData::encode(Compression::Raw, &planes, &header)).unwrap_or(ImageData {
+        compression: Compression::Raw,
+        data: planes,
+        stored: None,
+    });
     ctl.progress(1.0);
     MergedExport { header, image_data, extra, has_alpha, quick_mask_id, real_merged }
 }

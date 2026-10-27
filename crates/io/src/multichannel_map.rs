@@ -108,7 +108,7 @@ pub(crate) fn document_to_psd(doc: &Document, force_psb: bool, size_limit: Optio
         }
     }
     let big = doc.size.width > 30_000 || doc.size.height > 30_000;
-    let version = crate::psd_export::psd_version(doc, force_psb);
+    let version = crate::psd_export::psd_version(doc, force_psb, false);
     if big && !force_psb {
         warnings.push("document exceeds 30000 px; written as PSB".into());
     }

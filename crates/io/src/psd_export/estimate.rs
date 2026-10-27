@@ -1,4 +1,31 @@
-use super::{ColorMode, Document, LayerContent, PSD_ESTIMATE_FIXED_OVERHEAD, PSD_ESTIMATE_LAYER_OVERHEAD, PSD_MAX_FILE_SIZE, SampleType, Surface, Version};
+use super::{ColorMode, Document, LayerContent, PSD_MAX_FILE_SIZE, SampleType, Surface, Version};
+use photocraft_psd::{Header, PsdFile, TaggedBlock};
+
+const PSD_ESTIMATE_FIXED_OVERHEAD: u64 = 15 * 1024;
+const PSD_ESTIMATE_LAYER_OVERHEAD: u64 = 256 * 1024;
+
+/// When `file` exceeds `limit` bytes as written, switches it to PSB and returns a warning;
+/// otherwise returns nothing. A writer that embeds layer data elsewhere turns `size_limit_psb`
+/// off and only calls this when a length really overflows 32 bits.
+pub(crate) fn fit_psd_size(file: &mut PsdFile, limit: u64) -> Vec<String> {
+    let len = file.encoded_len().unwrap_or(u64::MAX);
+    if len <= limit {
+        return Vec::new();
+    }
+    file.write_as_psb = true;
+    file.header.version = Version::Psb;
+    vec!["file exceeds the PSD size limit; written as PSB".into()]
+}
+
+/// Writes `image_data`'s `Merged` block (1096) signature/version, the `global_blocks`
+/// signatures/versions, and the `resource` signatures/versions for a file being saved.
+pub(crate) fn sign_global_blocks(file: &mut PsdFile) {
+    let version = file.header.version;
+    for b in &mut file.global_blocks {
+        b.signature = block_signature(b.signature, b.key, version);
+        b.key = block_signature(b.key, b.key, version);
+    }
+}
 
 /// How much of a PSD conversion the merged composite weighs, in layer records: rendering it
 /// (all layers composited) and encoding its planes cost about two full-canvas layers.
@@ -167,7 +194,6 @@ pub(crate) fn psd_version(doc: &Document, force_psb: bool, size_exceeds_limit: b
     let exceeds_dimensions = doc.size.width > 30_000 || doc.size.height > 30_000;
     if force_psb || exceeds_dimensions || size_exceeds_limit { Version::Psb } else { Version::Psd }
 }
-
 pub(crate) fn psd_size_exceeds_limit(doc: &Document) -> bool {
     exceeds_psd_size_limit(estimate_psd_size(doc))
 }

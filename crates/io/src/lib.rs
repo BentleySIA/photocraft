@@ -88,6 +88,7 @@ pub use flat::{
     tga_alpha_channel_to_transparency, tga_default_bits,
 };
 pub use psd_export::{PsdExportOptions, document_to_psd, document_to_psd_with};
+pub(crate) use psd_import::psd_to_document_owned;
 pub use psd_import::{psd_to_document, psd_to_document_with};
 
 /// Errors from import/export.
@@ -404,7 +405,7 @@ fn import_psd(
     // The file became unreadable while its layers were read from it (`import_file_for_open_with`):
     // the open fails, rather than opening with those layers empty.
     if let Some(e) = read_error {
-        return Err(IoError::Read(e));
+        return Err(IoError::Read(e.to_string()));
     }
     *damaged = psd_damaged;
     document.name = name.to_string();

@@ -51,7 +51,7 @@ pub struct ActiveSnap {
     pub smart: SnapTargets,
     pub disabled: bool,
     /// Ctrl used to start a Move/Auto-Select gesture belongs to that tool until released.
-    move_ctrl_held: bool,
+    pub move_ctrl_held: bool,
 }
 
 /// Snap To options from the View menu and the Guides/Grid preferences.
@@ -190,6 +190,7 @@ fn corner_distorts(app: &PhotocraftApp, gesture: &Gesture, mods: egui::Modifiers
     matches!(gesture, Gesture::TransformCorner { index, .. } if crate::transform_tool::corner_distorts(app, *index, mods))
 }
 
+/// Ctrl used to start moving is consumed until released; a fresh press overrides snapping.
 fn override_for_gesture(app: &mut PhotocraftApp, mods: egui::Modifiers) -> bool {
     let ctrl = override_held(mods);
     if let Some(snap) = app.prefs_rt.snap.as_mut() {
@@ -301,7 +302,7 @@ fn begin(app: &mut PhotocraftApp, p: [f64; 2], mods: egui::Modifiers) {
     } else {
         SnapTargets::default()
     };
-    let move_ctrl_held = mods.command && override_held(mods) && matches!(gesture, Gesture::Move { .. });
+    let move_ctrl_held = mods.command && override_held(mods) && (tool == Tool::Move || moves_layer) && matches!(gesture, Gesture::Move { .. });
     app.prefs_rt.snap = Some(ActiveSnap { gesture, start: p, targets, smart, disabled: false, move_ctrl_held });
 }
 

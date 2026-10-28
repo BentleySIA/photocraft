@@ -157,6 +157,7 @@ fn command_drag_temporary_move_snaps_like_the_move_tool() {
     }
 }
 
+/// Releasing and pressing Ctrl again disables snapping for this drag; a new drag resets it.
 #[test]
 fn ctrl_move_can_disable_snapping_after_releasing_and_pressing_ctrl_again() {
     let mut app = app_with_box();
@@ -180,6 +181,7 @@ fn ctrl_move_can_disable_snapping_after_releasing_and_pressing_ctrl_again() {
     assert_eq!(mover_bounds(&app).x0, 300);
 }
 
+/// Ctrl-started moves obey View Snap and the screen-space threshold, including release-only input.
 #[test]
 fn ctrl_move_respects_view_snap_and_screen_space_tolerance() {
     let ctrl = egui::Modifiers { ctrl: true, command: true, ..Default::default() };
@@ -195,6 +197,7 @@ fn ctrl_move_respects_view_snap_and_screen_space_tolerance() {
     }
 }
 
+/// The moving bounds align to the document centre and to guides independently of the grab point.
 #[test]
 fn ctrl_move_snaps_to_document_centre_and_guides() {
     let ctrl = egui::Modifiers { ctrl: true, command: true, ..Default::default() };
@@ -207,6 +210,32 @@ fn ctrl_move_snaps_to_document_centre_and_guides() {
         crate::canvas::tool_event(&mut app, ToolEvent::Down { x: 60.0, y: 60.0, pressure: 1.0 }, ctrl);
         crate::canvas::tool_event(&mut app, ToolEvent::Up { x, y: 100.0 }, ctrl);
         assert_eq!(mover_bounds(&app).x0, expected, "guide {guide}");
+    }
+}
+
+/// Ctrl-Straighten near a guide keeps its raw line endpoint and angle in both crop modes.
+#[test]
+fn ctrl_straighten_near_a_guide_does_not_take_the_layer_move_exception() {
+    let ctrl = egui::Modifiers { ctrl: true, command: true, ..Default::default() };
+    for classic in [false, true] {
+        let mut app = app_with_box();
+        app.ui.tool = Tool::Crop;
+        app.ui.tool_options.crop_shield.classic_mode = classic;
+        crate::crop_ui::ensure_frame(&mut app);
+        app.ui.crop_rect = Some([80.0, 60.0, 240.0, 180.0]);
+        app.crop.default_frame = false;
+        app.ui.view.snap_to.layers = false;
+        app.ui.view.snap_to.document_bounds = false;
+        app.run("view.newGuide", json!({"orientation": "vertical", "position": 220})).unwrap();
+        let (start, end) = ([120.0, 100.0], [258.0, 130.0]);
+        crate::canvas::tool_event(&mut app, ToolEvent::Down { x: start[0], y: start[1], pressure: 1.0 }, ctrl);
+        crate::canvas::tool_event(&mut app, ToolEvent::Move { x: end[0], y: end[1], pressure: 1.0 }, ctrl);
+        // A moved Classic frame's left edge would be x=218, close enough to snap to x=220.
+        assert_eq!(app.crop.straighten.line, Some([start, end]), "classic {classic}: the line must follow the pointer");
+        assert!(app.prefs_rt.snap_lines.is_empty(), "classic {classic}: Straighten is not a layer move");
+        crate::canvas::tool_event(&mut app, ToolEvent::Up { x: end[0], y: end[1] }, ctrl);
+        let expected = 30.0f64.atan2(138.0).to_degrees();
+        assert!((app.ui.crop_angle - expected).abs() < 1e-6, "classic {classic}: {} != {expected}", app.ui.crop_angle);
     }
 }
 
